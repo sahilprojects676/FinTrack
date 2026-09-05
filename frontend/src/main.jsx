@@ -17,7 +17,10 @@ import {
 } from "recharts";
 import "./styles.css";
 
-const API = import.meta.env.VITE_API_URL || "https://fintrack-emjn.onrender.com";
+const rawApi = import.meta.env.VITE_API_URL || "https://fintrack-emjn.onrender.com/api";
+const API = rawApi.replace(/\/+$/, "").endsWith("/api")
+  ? rawApi.replace(/\/+$/, "")
+  : `${rawApi.replace(/\/+$/, "")}/api`;
 const api = axios.create({ baseURL: API });
 
 api.interceptors.request.use(config => {

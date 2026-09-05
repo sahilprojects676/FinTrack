@@ -49,6 +49,14 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Route compatibility: automatically forward non-/api requests to /api
+app.use((req, res, next) => {
+  if (req.path !== "/" && !req.path.startsWith("/api")) {
+    req.url = `/api${req.url}`;
+  }
+  next();
+});
+
 // ================= NODEMAILER EMAIL DELIVERY =================
 let mailTransporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
