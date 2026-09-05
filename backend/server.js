@@ -18,6 +18,32 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// Root health check endpoint for Render / monitoring
+app.get("/", (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+  res.json({
+    success: true,
+    service: "FinTrack API",
+    status: "active",
+    database: dbStatus,
+    message: dbStatus === "connected"
+      ? "FinTrack backend server is live and connected to MongoDB!"
+      : "FinTrack backend is active, but MongoDB is not connected. Please ensure MONGO_URI is configured with your MongoDB Atlas connection string in Render environment variables.",
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get("/api/health", (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+  res.json({
+    success: true,
+    service: "FinTrack API",
+    status: "active",
+    database: dbStatus,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ================= NODEMAILER EMAIL DELIVERY =================
 let mailTransporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {

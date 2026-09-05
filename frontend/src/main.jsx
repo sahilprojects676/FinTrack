@@ -20,7 +20,6 @@ import "./styles.css";
 const API = import.meta.env.VITE_API_URL || "https://fintrack-emjn.onrender.com";
 const api = axios.create({ baseURL: API });
 
-// Automatically attach Authorization header to every outgoing request
 api.interceptors.request.use(config => {
   const token = localStorage.getItem("fintrack_token");
   if (token) {
