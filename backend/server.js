@@ -57,7 +57,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================= NODEMAILER EMAIL DELIVERY =================
+// ================= MULTI-PROVIDER EMAIL DELIVERY (RESEND + GMAIL/SMTP) =================
 let mailTransporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   mailTransporter = nodemailer.createTransport({
@@ -67,7 +67,7 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       pass: process.env.EMAIL_PASS
     }
   });
-  console.log(`[Email Service] Configured Gmail delivery via ${process.env.EMAIL_USER}`);
+  console.log(`[Email Service] Configured Gmail fallback delivery via ${process.env.EMAIL_USER}`);
 } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
   mailTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -78,157 +78,199 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       pass: process.env.SMTP_PASS
     }
   });
-  console.log(`[Email Service] Configured SMTP delivery via ${process.env.SMTP_HOST}`);
-} else {
-  console.log("[Email Service] SMTP not configured in .env. Codes will be logged to console and provided in response.");
+  console.log(`[Email Service] Configured SMTP fallback delivery via ${process.env.SMTP_HOST}`);
+}
+
+if (process.env.RESEND_API_KEY) {
+  console.log(`[Email Service] Resend API configured as primary email provider!`);
+}
+
+async function sendAppEmail({ to, subject, html, text, fromName = "FinTrack" }) {
+  // 1. Primary: Send via Resend REST API (fastest, never blocked by cloud firewalls)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const fromAddress = process.env.RESEND_FROM || `${fromName} <onboarding@resend.dev>`;
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.RESEND_API_KEY.trim()}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [to],
+          subject,
+          html,
+          text: text || ""
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.id) {
+        console.log(`[Email Service - Resend] Delivered to ${to} (ID: ${data.id})`);
+        return { sent: true, provider: "resend", id: data.id };
+      } else {
+        console.warn(`[Email Service - Resend Notice]: ${data.message || JSON.stringify(data)}. Attempting fallback...`);
+      }
+    } catch (resendErr) {
+      console.warn(`[Email Service - Resend Error]: ${resendErr.message}. Attempting fallback...`);
+    }
+  }
+
+  // 2. Fallback: Send via Nodemailer (Gmail or Custom SMTP)
+  if (mailTransporter) {
+    try {
+      const from = `"${fromName}" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`;
+      const info = await mailTransporter.sendMail({
+        from,
+        to,
+        subject,
+        html,
+        text
+      });
+      console.log(`[Email Service - Nodemailer] Delivered to ${to}: ID=${info.messageId}`);
+      return { sent: true, provider: "nodemailer", messageId: info.messageId };
+    } catch (nodeErr) {
+      console.error(`[Email Service - Nodemailer Error] Failed to send to ${to}:`, nodeErr.message);
+    }
+  }
+
+  return { sent: false };
 }
 
 async function sendEmailCode(targetEmail, code) {
-  if (!mailTransporter) {
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 24px; background: #f8fafc; border-radius: 8px; max-width: 500px;">
+      <h2 style="color: #059669; margin-bottom: 8px;">FinTrack Account Verification</h2>
+      <p style="color: #334155; font-size: 15px;">Use the following 6-digit verification code to confirm your email and complete your registration:</p>
+      <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #047857; margin: 20px 0; padding: 12px 24px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; display: inline-block;">
+        ${code}
+      </div>
+      <p style="color: #64748b; font-size: 13px;">This code is valid for 10 minutes. If you did not request this, please disregard this email.</p>
+    </div>
+  `;
+  const result = await sendAppEmail({
+    to: targetEmail,
+    subject: "FinTrack - Email Verification Code",
+    html,
+    text: `Your FinTrack verification code is: ${code}. It expires in 10 minutes.`
+  });
+
+  if (!result.sent) {
     console.log(`[Auth Verification Code for ${targetEmail}]: ${code}`);
-    return { sent: false };
   }
-  try {
-    await mailTransporter.sendMail({
-      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "FinTrack - Email Verification Code",
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 24px; background: #f8fafc; border-radius: 8px; max-width: 500px;">
-          <h2 style="color: #059669; margin-bottom: 8px;">FinTrack Account Verification</h2>
-          <p style="color: #334155; font-size: 15px;">Use the following 6-digit verification code to confirm your email and complete your registration:</p>
-          <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #047857; margin: 20px 0; padding: 12px 24px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; display: inline-block;">
-            ${code}
-          </div>
-          <p style="color: #64748b; font-size: 13px;">This code is valid for 10 minutes. If you did not request this, please disregard this email.</p>
-        </div>
-      `
-    });
-    console.log(`[Email Service] Verification email successfully sent to ${targetEmail}`);
-    return { sent: true };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send email to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 async function sendVerificationLinkEmail(targetEmail, targetName, verifyUrl) {
-  if (!mailTransporter) {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; background: #ecfdf5; padding: 12px; border-radius: 50%; margin-bottom: 12px;">
+          <span style="font-size: 28px;">🔐</span>
+        </div>
+        <h1 style="color: #0f172a; font-size: 22px; margin: 0 0 6px; font-weight: 700;">Confirm your email address</h1>
+        <p style="color: #64748b; font-size: 14.5px; margin: 0;">Welcome to FinTrack, ${targetName}!</p>
+      </div>
+      
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+        <p style="color: #334155; font-size: 14.5px; line-height: 1.5; margin: 0 0 16px;">
+          To verify that this email belongs to you and complete your account creation, please click the button below:
+        </p>
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${verifyUrl}" target="_blank" style="display: inline-block; background: #059669; color: #ffffff; font-weight: 600; font-size: 15px; padding: 14px 28px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.2);">
+            Verify & Activate Account ↗
+          </a>
+        </div>
+        <p style="color: #64748b; font-size: 12.5px; margin: 0; line-height: 1.4;">
+          Button not working? Copy and paste this link into your browser:<br/>
+          <a href="${verifyUrl}" style="color: #059669; word-break: break-all; font-size: 12px;">${verifyUrl}</a>
+        </p>
+      </div>
+      
+      <p style="color: #94a3b8; font-size: 12.5px; text-align: center; margin: 0;">
+        This link is valid for 24 hours. If you did not request this, you can safely ignore this email.
+      </p>
+    </div>
+  `;
+  const text = `Hello ${targetName},\n\nWelcome to FinTrack! Please click the link below to verify your email and activate your account:\n\n${verifyUrl}\n\nThis link is valid for 24 hours. If you did not request this, please disregard this email.\n\nBest regards,\nFinTrack Team`;
+
+  const result = await sendAppEmail({
+    to: targetEmail,
+    subject: "Confirm your FinTrack account",
+    html,
+    text
+  });
+
+  if (!result.sent) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Verification Link for ${targetEmail}]`);
     console.log(`Click this link to verify and create account:`);
     console.log(`${verifyUrl}`);
     console.log(`======================================================\n`);
-    return { sent: false };
   }
-  try {
-    const info = await mailTransporter.sendMail({
-      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "Confirm your FinTrack account",
-      text: `Hello ${targetName},\n\nWelcome to FinTrack! Please click the link below to verify your email and activate your account:\n\n${verifyUrl}\n\nThis link is valid for 24 hours. If you did not request this, please disregard this email.\n\nBest regards,\nFinTrack Team`,
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <div style="display: inline-block; background: #ecfdf5; padding: 12px; border-radius: 50%; margin-bottom: 12px;">
-              <span style="font-size: 28px;">🔐</span>
-            </div>
-            <h1 style="color: #0f172a; font-size: 22px; margin: 0 0 6px; font-weight: 700;">Confirm your email address</h1>
-            <p style="color: #64748b; font-size: 14.5px; margin: 0;">Welcome to FinTrack, ${targetName}!</p>
-          </div>
-          
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-            <p style="color: #334155; font-size: 14.5px; line-height: 1.5; margin: 0 0 16px;">
-              To verify that this email belongs to you and complete your account creation, please click the button below:
-            </p>
-            <div style="text-align: center; margin: 24px 0;">
-              <a href="${verifyUrl}" target="_blank" style="display: inline-block; background: #059669; color: #ffffff; font-weight: 600; font-size: 15px; padding: 14px 28px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.2);">
-                Verify & Activate Account ↗
-              </a>
-            </div>
-            <p style="color: #64748b; font-size: 12.5px; margin: 0; line-height: 1.4;">
-              Button not working? Copy and paste this link into your browser:<br/>
-              <a href="${verifyUrl}" style="color: #059669; word-break: break-all; font-size: 12px;">${verifyUrl}</a>
-            </p>
-          </div>
-          
-          <p style="color: #94a3b8; font-size: 12.5px; text-align: center; margin: 0;">
-            This link is valid for 24 hours. If you did not request this, you can safely ignore this email.
-          </p>
-        </div>
-      `
-    });
-    console.log(`[Email Service] Verification link email delivered to ${targetEmail}: ID=${info.messageId}, GoogleResponse=${info.response}`);
-    return { sent: true, messageId: info.messageId };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send verification link to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCode) {
-  if (!mailTransporter) {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; background: #fff1f2; padding: 14px; border-radius: 50%; margin-bottom: 12px; border: 1px solid #fecdd3;">
+          <span style="font-size: 30px;">🔑</span>
+        </div>
+        <h1 style="color: #0f172a; font-size: 22px; margin: 0 0 6px; font-weight: 700;">Reset Your Password</h1>
+        <p style="color: #64748b; font-size: 14px; margin: 0;">FinTrack Account Security</p>
+      </div>
+      
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px; margin-bottom: 24px;">
+        <p style="color: #334155; font-size: 14.5px; line-height: 1.5; margin: 0 0 16px;">
+          Hello <strong>${targetName || "there"}</strong>,<br/><br/>
+          We received a request to reset the password for your FinTrack account (<strong>${targetEmail}</strong>).
+        </p>
+
+        <div style="text-align: center; margin: 20px 0;">
+          <p style="color: #64748b; font-size: 12px; margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;">Your 6-Digit Reset Code</p>
+          <div style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #ef476f; padding: 12px 22px; background: #ffffff; border: 2px dashed #f43f5e; border-radius: 8px; display: inline-block; font-family: monospace;">
+            ${resetCode}
+          </div>
+        </div>
+
+        <div style="text-align: center; margin: 24px 0 16px;">
+          <a href="${resetUrl}" target="_blank" style="display: inline-block; background: #ef476f; color: #ffffff; font-weight: 600; font-size: 15px; padding: 13px 28px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(239, 71, 111, 0.25);">
+            Click to Set New Password ↗
+          </a>
+        </div>
+
+        <p style="color: #64748b; font-size: 12px; margin: 16px 0 0; line-height: 1.4; text-align: center;">
+          Button not working? Copy & paste this link into your browser:<br/>
+          <a href="${resetUrl}" style="color: #ef476f; word-break: break-all; font-size: 11.5px;">${resetUrl}</a>
+        </p>
+      </div>
+      
+      <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0; line-height: 1.4;">
+        This reset code and link expire in <strong>15 minutes</strong>.<br/>
+        If you did not request a password reset, you can safely ignore this email.
+      </p>
+    </div>
+  `;
+  const text = `Hello ${targetName},\n\nWe received a request to reset your password for FinTrack.\n\nYour 6-digit Reset Code is: ${resetCode}\n\nOr click the link below to set a new password:\n${resetUrl}\n\nThis code and link expire in 15 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nFinTrack Team`;
+
+  const result = await sendAppEmail({
+    to: targetEmail,
+    subject: "FinTrack - Password Reset Request",
+    html,
+    text,
+    fromName: "FinTrack Security"
+  });
+
+  if (!result.sent) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Password Reset for ${targetEmail}]`);
     console.log(`Reset Code: ${resetCode}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log(`======================================================\n`);
-    return { sent: false };
   }
-  try {
-    const info = await mailTransporter.sendMail({
-      from: `"FinTrack Security" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "FinTrack - Password Reset Request",
-      text: `Hello ${targetName},\n\nWe received a request to reset your password for FinTrack.\n\nYour 6-digit Reset Code is: ${resetCode}\n\nOr click the link below to set a new password:\n${resetUrl}\n\nThis code and link expire in 15 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nFinTrack Team`,
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-          <div style="text-align: center; margin-bottom: 24px;">
-            <div style="display: inline-block; background: #fff1f2; padding: 14px; border-radius: 50%; margin-bottom: 12px; border: 1px solid #fecdd3;">
-              <span style="font-size: 30px;">🔑</span>
-            </div>
-            <h1 style="color: #0f172a; font-size: 22px; margin: 0 0 6px; font-weight: 700;">Reset Your Password</h1>
-            <p style="color: #64748b; font-size: 14px; margin: 0;">FinTrack Account Security</p>
-          </div>
-          
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 22px; margin-bottom: 24px;">
-            <p style="color: #334155; font-size: 14.5px; line-height: 1.5; margin: 0 0 16px;">
-              Hello <strong>${targetName || "there"}</strong>,<br/><br/>
-              We received a request to reset the password for your FinTrack account (<strong>${targetEmail}</strong>).
-            </p>
-
-            <div style="text-align: center; margin: 20px 0;">
-              <p style="color: #64748b; font-size: 12px; margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;">Your 6-Digit Reset Code</p>
-              <div style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #ef476f; padding: 12px 22px; background: #ffffff; border: 2px dashed #f43f5e; border-radius: 8px; display: inline-block; font-family: monospace;">
-                ${resetCode}
-              </div>
-            </div>
-
-            <div style="text-align: center; margin: 24px 0 16px;">
-              <a href="${resetUrl}" target="_blank" style="display: inline-block; background: #ef476f; color: #ffffff; font-weight: 600; font-size: 15px; padding: 13px 28px; border-radius: 8px; text-decoration: none; box-shadow: 0 4px 6px -1px rgba(239, 71, 111, 0.25);">
-                Click to Set New Password ↗
-              </a>
-            </div>
-
-            <p style="color: #64748b; font-size: 12px; margin: 16px 0 0; line-height: 1.4; text-align: center;">
-              Button not working? Copy & paste this link into your browser:<br/>
-              <a href="${resetUrl}" style="color: #ef476f; word-break: break-all; font-size: 11.5px;">${resetUrl}</a>
-            </p>
-          </div>
-          
-          <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0; line-height: 1.4;">
-            This reset code and link expire in <strong>15 minutes</strong>.<br/>
-            If you did not request a password reset, you can safely ignore this email.
-          </p>
-        </div>
-      `
-    });
-    console.log(`[Email Service] Password reset email delivered to ${targetEmail}: ID=${info.messageId}`);
-    return { sent: true, messageId: info.messageId };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send password reset email to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 
