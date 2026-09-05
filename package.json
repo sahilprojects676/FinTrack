@@ -3,12 +3,10 @@
   "version": "1.0.0",
   "description": "FinTrack - Personal Finance & Expense Tracker",
   "main": "backend/server.js",
+  "type": "module",
   "scripts": {
-    "install:backend": "cd backend && npm install",
-    "install:frontend": "cd frontend && npm install",
-    "build": "npm --prefix backend install",
-    "start": "node backend/server.js",
-    "server": "node backend/server.js"
+    "build": "cd backend && npm install",
+    "start": "cd backend && node server.js"
   },
   "keywords": [
     "fintrack",
