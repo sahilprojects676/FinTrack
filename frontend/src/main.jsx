@@ -17,7 +17,7 @@ import {
 } from "recharts";
 import "./styles.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_URL || "https://fintrack-emjn.onrender.com";
 const api = axios.create({ baseURL: API });
 
 // Automatically attach Authorization header to every outgoing request
@@ -1627,6 +1627,41 @@ function FinanceApp({ user, onLogout, onUpdateUser }) {
         </main>
       </div>
 
+      {/* Mobile Bottom Navigation Bar */}
+      <nav className="mobile-bottom-nav">
+        {(canViewAdmin ? [
+          ["dashboard", "Dashboard", LayoutDashboard],
+          ["admin-broadcasts", "Broadcast", Megaphone],
+          ["admin-queries", "Inquiries", ShieldCheck],
+          ["account", "Account", UserRound]
+        ] : [
+          ["dashboard", "Dashboard", LayoutDashboard],
+          ["history", "History", History],
+          ["quick-add", "Add", Plus],
+          ["monthly", "Monthly", CalendarDays],
+          ["account", "Account", UserRound]
+        ]).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            className={`mobile-nav-item ${page === id ? "active" : ""} ${id === "quick-add" ? "mobile-nav-add-btn" : ""}`}
+            onClick={() => {
+              if (id === "quick-add") {
+                setShowModal(true);
+              } else {
+                setPage(id);
+              }
+            }}
+            aria-label={label}
+          >
+            <div className="mobile-nav-icon-wrap">
+              <Icon size={id === "quick-add" ? 22 : 18} />
+            </div>
+            <span className="mobile-nav-label">{label}</span>
+          </button>
+        ))}
+      </nav>
+
       <footer className="bottom-taskbar main-bottom-taskbar">
         <div className="bottom-taskbar-left">
           <span>© {new Date().getFullYear()} FinTrack. All rights reserved.</span>
@@ -1647,7 +1682,7 @@ function FinanceApp({ user, onLogout, onUpdateUser }) {
   );
 }
 
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function Dashboard({ data, transactions = [], loading, error, onRetry, onAdd, onBudget }) {
   const now = new Date();

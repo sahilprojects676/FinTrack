@@ -3371,80 +3371,455 @@ td {
   }
 }
 
-@media (max-width: 650px) {
+/* Mobile Bottom Navigation Bar - Base */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.06);
+  z-index: 1000;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #64748b;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  flex: 1;
+  max-width: 72px;
+  outline: none;
+}
+
+.mobile-nav-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  transition: transform 0.2s ease;
+}
+
+.mobile-nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 2px;
+  transition: color 0.18s ease;
+  white-space: nowrap;
+}
+
+.mobile-nav-item:hover,
+.mobile-nav-item.active {
+  color: #10b981;
+}
+
+.mobile-nav-item.active .mobile-nav-icon-wrap {
+  transform: translateY(-2px);
+  color: #10b981;
+}
+
+.mobile-nav-item.active .mobile-nav-label {
+  color: #059669;
+  font-weight: 700;
+}
+
+/* Center Prominent Add Button */
+.mobile-nav-item.mobile-nav-add-btn {
+  margin-top: -18px;
+  flex: 0 0 auto;
+}
+
+.mobile-nav-item.mobile-nav-add-btn .mobile-nav-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45);
+  border: 3px solid #ffffff;
+}
+
+.mobile-nav-item.mobile-nav-add-btn .mobile-nav-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #059669;
+  margin-top: 2px;
+}
+
+.mobile-nav-item.mobile-nav-add-btn:active .mobile-nav-icon-wrap {
+  transform: scale(0.92);
+}
+
+@media (max-width: 768px) {
+  /* Layout */
+  .app-shell {
+    height: auto !important;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .app-body {
+    height: auto !important;
+    min-height: calc(100vh - 58px);
+    overflow: visible !important;
+  }
+
   .sidebar {
-    width: 70px;
-    padding: 20px 10px;
+    display: none !important;
   }
-  .sidebar .brand {
-    font-size: 0;
-    justify-content: center;
-    margin: 0 0 20px;
+
+  .mobile-bottom-nav {
+    display: flex !important;
   }
-  .sidebar .profile-mini div:not(.avatar),
-  .sidebar nav button:not(.active),
-  .sidebar nav button {
-    font-size: 0;
+
+  .main-bottom-taskbar {
+    display: none !important;
   }
-  .sidebar nav button {
-    justify-content: center;
+
+  .main {
+    height: auto !important;
+    overflow-y: visible !important;
+    padding-bottom: 82px !important;
+    width: 100%;
+    min-width: 0;
   }
-  .logout {
-    font-size: 0;
-    justify-content: center;
-  }
-  .topbar {
-    padding: 0 15px;
-  }
-  .topbar .search {
-    width: 180px;
-  }
+
   .content {
-    padding: 20px 15px;
+    padding: 16px 14px 24px;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
-  .stats,
-  .grid-two,
-  .month-grid,
-  .form-grid {
-    grid-template-columns: 1fr;
+
+  /* Top Taskbar */
+  .app-taskbar {
+    height: 58px;
+    padding: 0 12px;
+    gap: 8px;
   }
-  .page-heading {
-    align-items: flex-start;
-    gap: 10px;
-    flex-direction: column;
+
+  .brand-logo-combo .brand-title {
+    font-size: 18px;
   }
-  .login-page {
+
+  .brand-logo-combo .brand-slogan-text,
+  .brand-logo-combo .slogan-badge-left {
+    display: none !important;
+  }
+
+  .taskbar-search-wrap {
+    max-width: 100%;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .taskbar-search-input {
+    font-size: 13px;
+    padding-left: 32px;
+    height: 38px;
+  }
+
+  .taskbar-search-icon {
+    left: 9px;
+  }
+
+  .taskbar-add-btn {
+    display: none !important;
+  }
+
+  .taskbar-user .user-details {
+    display: none !important;
+  }
+
+  .taskbar-user {
     padding: 0;
   }
-  .login-brand {
-    padding: 25px 15px;
-  }
-  .login-feature-pills {
-    grid-template-columns: 1fr 1fr;
-  }
-  .slogan-badge-left {
+
+  .admin-status-indicator-pill span:not(.live-dot) {
     display: none;
   }
-  .floating-savings-card {
-    position: static;
-    width: 100%;
-    margin-top: 14px;
+
+  .admin-status-indicator-pill {
+    padding: 6px;
+    min-width: 0;
   }
-  .login-form-wrap {
-    padding: 30px 20px;
+
+  /* Notification dropdown on mobile */
+  .notification-dropdown {
+    position: fixed;
+    top: 60px;
+    left: 12px;
+    right: 12px;
+    width: auto !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: 80vh;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
   }
-  .account-messages-header {
+
+  /* Dashboard Cards & Stats */
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .grid-two {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .card {
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+
+  .card-head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-head h3 {
+    font-size: 15px;
+  }
+
+  .chart {
+    height: 220px;
+  }
+
+  .page-heading {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
-    padding: 15px 16px;
+    margin-bottom: 18px;
   }
-  .account-messages-header-right {
+
+  .page-heading h1 {
+    font-size: 24px;
+  }
+
+  /* Month Selector Row */
+  .dashboard-month-selector,
+  .month-picker-wrap {
     width: 100%;
-    justify-content: space-between;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
   }
+
+  /* History Page */
+  .history-month-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .hms-divider {
+    display: none;
+  }
+
+  .table-tools {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .table-tools .search.inner {
+    width: 100%;
+  }
+
+  .history-type-pills {
+    width: 100%;
+    display: flex;
+  }
+
+  .history-type-pills .type-pill {
+    flex: 1;
+    text-align: center;
+    padding: 8px 10px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
+  .table-wrap table {
+    min-width: 520px;
+  }
+
+  /* Monthly Records Grid */
+  .month-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Account Page */
+  .account-header-profile {
+    flex-direction: column;
+    text-align: center;
+    gap: 14px;
+  }
+
+  .account-name-badge-line {
+    justify-content: center;
+  }
+
+  .avatar-control-btns {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .account-card-actions {
+    flex-direction: column;
+  }
+
+  .account-card-actions button {
+    width: 100%;
+  }
+
+  /* Mobile Modals */
+  .modal-overlay {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 85vh;
+    border-radius: 18px 18px 10px 10px;
+    padding: 20px 16px;
+    overflow-y: auto;
+  }
+
+  /* iOS Auto-Zoom Fix: inputs at 16px font-size */
+  .account-card input,
+  .account-card select,
+  .modal input,
+  .modal select,
+  .login-form-wrap input {
+    font-size: 16px !important;
+  }
+
+  /* Login / Sign Up Page Mobile */
+  .login-page {
+    padding: 0;
+    min-height: 100vh;
+  }
+
+  .login-card {
+    border-radius: 0;
+    box-shadow: none;
+    border: none;
+    min-height: 100vh;
+  }
+
+  .login-brand {
+    padding: 24px 16px 16px;
+    border-bottom: 1px solid #edf0ee;
+  }
+
+  .showcase-character-wrap,
+  .floating-savings-card {
+    display: none !important;
+  }
+
+  .login-headline-block h1 {
+    font-size: 26px;
+    line-height: 1.25;
+  }
+
+  .login-headline-block p {
+    font-size: 13px;
+  }
+
+  .login-feature-pills {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .feature-pill {
+    padding: 8px 10px;
+    font-size: 11.5px;
+  }
+
+  .login-form-wrap {
+    padding: 24px 18px 36px;
+    max-width: 100%;
+  }
+
+  .login-form-wrap h2 {
+    font-size: 26px;
+  }
+
+  /* Admin Dashboard Mobile */
+  .admin-dash-kpi-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .admin-tab-nav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
   .messages-table {
-    min-width: 600px;
+    min-width: 540px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-taskbar {
+    padding: 0 10px;
+  }
+
+  .brand-logo-combo .brand-title {
+    font-size: 16px;
+  }
+
+  .brand-logo-img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .taskbar-search-input {
+    font-size: 12px;
+    padding-left: 28px;
+  }
+
+  .login-feature-pills {
+    grid-template-columns: 1fr;
+  }
+
+  .reset-code-input {
+    letter-spacing: 4px !important;
+    font-size: 18px !important;
   }
 }
 
