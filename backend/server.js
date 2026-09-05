@@ -57,7 +57,38 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================= MULTI-PROVIDER EMAIL DELIVERY (RESEND + GMAIL/SMTP) =================
+// ================= RESEND / NODEMAILER EMAIL DELIVERY =================
+async function sendViaResend({ to, subject, html, text }) {
+  if (!process.env.RESEND_API_KEY) return null;
+  try {
+    const from = process.env.RESEND_FROM || "FinTrack <onboarding@resend.dev>";
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.RESEND_API_KEY.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from,
+        to: Array.isArray(to) ? to : [to],
+        subject,
+        html,
+        text
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      console.warn("[Email Service Resend] Notice from Resend API:", data.message || JSON.stringify(data));
+      return null;
+    }
+    console.log(`[Email Service Resend] Email delivered successfully to ${to} via Resend: ID=${data.id}`);
+    return { sent: true, messageId: data.id };
+  } catch (err) {
+    console.warn("[Email Service Resend] Error attempting Resend delivery:", err.message);
+    return null;
+  }
+}
+
 let mailTransporter = null;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   mailTransporter = nodemailer.createTransport({
@@ -67,7 +98,7 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       pass: process.env.EMAIL_PASS
     }
   });
-  console.log(`[Email Service] Configured Gmail fallback delivery via ${process.env.EMAIL_USER}`);
+  console.log(`[Email Service] Configured Gmail delivery via ${process.env.EMAIL_USER}`);
 } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
   mailTransporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -78,63 +109,9 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       pass: process.env.SMTP_PASS
     }
   });
-  console.log(`[Email Service] Configured SMTP fallback delivery via ${process.env.SMTP_HOST}`);
-}
-
-if (process.env.RESEND_API_KEY) {
-  console.log(`[Email Service] Resend API configured as primary email provider!`);
-}
-
-async function sendAppEmail({ to, subject, html, text, fromName = "FinTrack" }) {
-  // 1. Primary: Send via Resend REST API (fastest, never blocked by cloud firewalls)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const fromAddress = process.env.RESEND_FROM || `${fromName} <onboarding@resend.dev>`;
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.RESEND_API_KEY.trim()}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: fromAddress,
-          to: [to],
-          subject,
-          html,
-          text: text || ""
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.id) {
-        console.log(`[Email Service - Resend] Delivered to ${to} (ID: ${data.id})`);
-        return { sent: true, provider: "resend", id: data.id };
-      } else {
-        console.warn(`[Email Service - Resend Notice]: ${data.message || JSON.stringify(data)}. Attempting fallback...`);
-      }
-    } catch (resendErr) {
-      console.warn(`[Email Service - Resend Error]: ${resendErr.message}. Attempting fallback...`);
-    }
-  }
-
-  // 2. Fallback: Send via Nodemailer (Gmail or Custom SMTP)
-  if (mailTransporter) {
-    try {
-      const from = `"${fromName}" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`;
-      const info = await mailTransporter.sendMail({
-        from,
-        to,
-        subject,
-        html,
-        text
-      });
-      console.log(`[Email Service - Nodemailer] Delivered to ${to}: ID=${info.messageId}`);
-      return { sent: true, provider: "nodemailer", messageId: info.messageId };
-    } catch (nodeErr) {
-      console.error(`[Email Service - Nodemailer Error] Failed to send to ${to}:`, nodeErr.message);
-    }
-  }
-
-  return { sent: false };
+  console.log(`[Email Service] Configured SMTP delivery via ${process.env.SMTP_HOST}`);
+} else {
+  console.log("[Email Service] Fallback SMTP not configured.");
 }
 
 async function sendEmailCode(targetEmail, code) {
@@ -148,20 +125,37 @@ async function sendEmailCode(targetEmail, code) {
       <p style="color: #64748b; font-size: 13px;">This code is valid for 10 minutes. If you did not request this, please disregard this email.</p>
     </div>
   `;
-  const result = await sendAppEmail({
-    to: targetEmail,
-    subject: "FinTrack - Email Verification Code",
-    html,
-    text: `Your FinTrack verification code is: ${code}. It expires in 10 minutes.`
-  });
+  const text = `FinTrack Account Verification\n\nYour 6-digit verification code is: ${code}\nThis code is valid for 10 minutes.`;
 
-  if (!result.sent) {
-    console.log(`[Auth Verification Code for ${targetEmail}]: ${code}`);
+  // Try Resend primary first
+  const resendResult = await sendViaResend({ to: targetEmail, subject: "FinTrack - Email Verification Code", html, text });
+  if (resendResult && resendResult.sent) {
+    return { sent: true, messageId: resendResult.messageId };
   }
-  return result;
+
+  // Fallback to Nodemailer
+  if (!mailTransporter) {
+    console.log(`[Auth Verification Code for ${targetEmail}]: ${code}`);
+    return { sent: false };
+  }
+  try {
+    await mailTransporter.sendMail({
+      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+      to: targetEmail,
+      subject: "FinTrack - Email Verification Code",
+      text,
+      html
+    });
+    console.log(`[Email Service] Verification email successfully sent to ${targetEmail}`);
+    return { sent: true };
+  } catch (err) {
+    console.error(`[Email Service] Failed to send email to ${targetEmail}:`, err.message);
+    return { sent: false, error: err.message };
+  }
 }
 
 async function sendVerificationLinkEmail(targetEmail, targetName, verifyUrl) {
+  const text = `Hello ${targetName},\n\nWelcome to FinTrack! Please click the link below to verify your email and activate your account:\n\n${verifyUrl}\n\nThis link is valid for 24 hours. If you did not request this, please disregard this email.\n\nBest regards,\nFinTrack Team`;
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
       <div style="text-align: center; margin-bottom: 24px;">
@@ -192,26 +186,40 @@ async function sendVerificationLinkEmail(targetEmail, targetName, verifyUrl) {
       </p>
     </div>
   `;
-  const text = `Hello ${targetName},\n\nWelcome to FinTrack! Please click the link below to verify your email and activate your account:\n\n${verifyUrl}\n\nThis link is valid for 24 hours. If you did not request this, please disregard this email.\n\nBest regards,\nFinTrack Team`;
 
-  const result = await sendAppEmail({
-    to: targetEmail,
-    subject: "Confirm your FinTrack account",
-    html,
-    text
-  });
+  // Try Resend primary first
+  const resendResult = await sendViaResend({ to: targetEmail, subject: "Confirm your FinTrack account", html, text });
+  if (resendResult && resendResult.sent) {
+    return { sent: true, messageId: resendResult.messageId };
+  }
 
-  if (!result.sent) {
+  // Fallback to Nodemailer
+  if (!mailTransporter) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Verification Link for ${targetEmail}]`);
     console.log(`Click this link to verify and create account:`);
     console.log(`${verifyUrl}`);
     console.log(`======================================================\n`);
+    return { sent: false };
   }
-  return result;
+  try {
+    const info = await mailTransporter.sendMail({
+      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+      to: targetEmail,
+      subject: "Confirm your FinTrack account",
+      text,
+      html
+    });
+    console.log(`[Email Service] Verification link email delivered to ${targetEmail}: ID=${info.messageId}, GoogleResponse=${info.response}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err) {
+    console.error(`[Email Service] Failed to send verification link to ${targetEmail}:`, err.message);
+    return { sent: false, error: err.message };
+  }
 }
 
 async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCode) {
+  const text = `Hello ${targetName},\n\nWe received a request to reset your password for FinTrack.\n\nYour 6-digit Reset Code is: ${resetCode}\n\nOr click the link below to set a new password:\n${resetUrl}\n\nThis code and link expire in 15 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nFinTrack Team`;
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
       <div style="text-align: center; margin-bottom: 24px;">
@@ -253,24 +261,36 @@ async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCo
       </p>
     </div>
   `;
-  const text = `Hello ${targetName},\n\nWe received a request to reset your password for FinTrack.\n\nYour 6-digit Reset Code is: ${resetCode}\n\nOr click the link below to set a new password:\n${resetUrl}\n\nThis code and link expire in 15 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nFinTrack Team`;
 
-  const result = await sendAppEmail({
-    to: targetEmail,
-    subject: "FinTrack - Password Reset Request",
-    html,
-    text,
-    fromName: "FinTrack Security"
-  });
+  // Try Resend primary first
+  const resendResult = await sendViaResend({ to: targetEmail, subject: "FinTrack - Password Reset Request", html, text });
+  if (resendResult && resendResult.sent) {
+    return { sent: true, messageId: resendResult.messageId };
+  }
 
-  if (!result.sent) {
+  // Fallback to Nodemailer
+  if (!mailTransporter) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Password Reset for ${targetEmail}]`);
     console.log(`Reset Code: ${resetCode}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log(`======================================================\n`);
+    return { sent: false };
   }
-  return result;
+  try {
+    const info = await mailTransporter.sendMail({
+      from: `"FinTrack Security" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+      to: targetEmail,
+      subject: "FinTrack - Password Reset Request",
+      text,
+      html
+    });
+    console.log(`[Email Service] Password reset email delivered to ${targetEmail}: ID=${info.messageId}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err) {
+    console.error(`[Email Service] Failed to send password reset email to ${targetEmail}:`, err.message);
+    return { sent: false, error: err.message };
+  }
 }
 
 
