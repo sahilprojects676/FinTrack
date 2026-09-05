@@ -1,0 +1,21 @@
+{
+  "name": "fintrack-fullstack",
+  "version": "1.0.0",
+  "description": "FinTrack - Personal Finance & Expense Tracker",
+  "main": "backend/server.js",
+  "scripts": {
+    "install:backend": "cd backend && npm install",
+    "install:frontend": "cd frontend && npm install",
+    "build": "npm --prefix backend install",
+    "start": "node backend/server.js",
+    "server": "node backend/server.js"
+  },
+  "keywords": [
+    "fintrack",
+    "finance",
+    "budget",
+    "expense-tracker"
+  ],
+  "author": "Sahil Naphade",
+  "license": "MIT"
+}
