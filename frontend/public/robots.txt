@@ -1,0 +1,32 @@
+# https://www.robotstxt.org/robotstxt.html
+# FinTrack Search Engine Crawling Directive
+
+User-agent: *
+Allow: /
+Allow: /index.html
+Allow: /assets/
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.svg$
+Allow: /*.webp$
+Allow: /*.css$
+Allow: /*.js$
+
+# Disallow API data routes & admin private dashboards
+Disallow: /api/
+Disallow: /admin/
+
+# Googlebot specific rules
+User-agent: Googlebot
+Allow: /
+Allow: /assets/
+Disallow: /api/
+
+# Bingbot specific rules
+User-agent: Bingbot
+Allow: /
+Allow: /assets/
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://fintrack.app/sitemap.xml

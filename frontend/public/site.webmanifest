@@ -1,0 +1,30 @@
+{
+  "name": "FinTrack — Smart Personal Finance & Budget Tracker",
+  "short_name": "FinTrack",
+  "description": "Full-stack personal finance and expense tracker in Indian Rupees (INR ₹). Track income, budget, and expenses with real-time charts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-official.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "finance",
+    "productivity",
+    "utilities",
+    "business"
+  ]
+}
