@@ -96,7 +96,10 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    connectionTimeout: 4000,
+    greetingTimeout: 4000,
+    socketTimeout: 4000
   });
   console.log(`[Email Service] Configured Gmail delivery via ${process.env.EMAIL_USER}`);
 } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -107,7 +110,10 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
-    }
+    },
+    connectionTimeout: 4000,
+    greetingTimeout: 4000,
+    socketTimeout: 4000
   });
   console.log(`[Email Service] Configured SMTP delivery via ${process.env.SMTP_HOST}`);
 } else {
@@ -683,6 +689,8 @@ app.post("/api/auth/request-signup-link", async (req, res) => {
         ? `We dispatched a verification link to ${cleanEmail}. Open your email and click the link to activate your account.`
         : `A verification link has been generated for ${cleanEmail}.`,
       sentViaEmail: mailResult.sent,
+      verifyUrl: mailResult.sent ? null : verifyUrl,
+      demoLink: mailResult.sent ? null : verifyUrl,
       email: cleanEmail
     });
   } catch (e) {
@@ -894,7 +902,8 @@ app.post("/api/auth/forgot-password", async (req, res) => {
         : `A password reset code has been generated for ${cleanEmail}.`,
       sentViaEmail: mailResult.sent,
       email: cleanEmail,
-      demoCode: mailResult.sent ? null : code
+      demoCode: code,
+      resetUrl: resetUrl
     });
   } catch (e) {
     console.error("[AUTH FORGOT-PASSWORD ERROR]:", e.message);

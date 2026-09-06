@@ -355,7 +355,8 @@ function Login({ onLogin, initialResetToken, onClearResetToken }) {
       const { data } = await api.post("/auth/request-signup-link", { name, email: cleanEmail, password });
       setLinkSentInfo({
         email: data.email || cleanEmail,
-        sentViaEmail: Boolean(data.sentViaEmail)
+        sentViaEmail: Boolean(data.sentViaEmail),
+        verifyUrl: data.verifyUrl || data.demoLink || null
       });
     } catch (err) {
       setError(err.response?.data?.message || "Failed to send verification link. Please check details.");
@@ -501,11 +502,25 @@ function Login({ onLogin, initialResetToken, onClearResetToken }) {
 
               <div className="link-sent-info-box">
                 <p style={{ margin: "0 0 8px", fontSize: "14px", color: "#1e293b", fontWeight: 600 }}>
-                  📬 Email sent from <span style={{ color: "#059669" }}>fintrack.com@gmail.com</span>
+                  📬 Verification Link Sent to <span style={{ color: "#059669" }}>{linkSentInfo.email}</span>
                 </p>
                 <p style={{ margin: "0 0 6px", fontSize: "13.5px", color: "#334155", lineHeight: "1.4" }}>
-                  Please check your <strong>Inbox</strong> (or <strong>Spam / Junk folder</strong> in Gmail) and click the link to activate your account.
+                  Please check your <strong>Inbox</strong> (and <strong>Spam / Junk folder</strong>) and click the link to activate your account.
                 </p>
+                {linkSentInfo.verifyUrl && (
+                  <div style={{ marginTop: "14px", padding: "12px", background: "#f0fdf4", border: "1px dashed #10b981", borderRadius: "8px", textAlign: "center" }}>
+                    <p style={{ margin: "0 0 8px", fontSize: "12.5px", color: "#166534", fontWeight: 600 }}>
+                      ⚡ Quick Link (Development & Testing):
+                    </p>
+                    <a
+                      href={linkSentInfo.verifyUrl}
+                      className="primary"
+                      style={{ display: "inline-block", padding: "8px 18px", fontSize: "13px", borderRadius: "6px", textDecoration: "none" }}
+                    >
+                      Click to Activate Account Now ↗
+                    </a>
+                  </div>
+                )}
               </div>
 
 
