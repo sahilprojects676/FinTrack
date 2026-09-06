@@ -293,6 +293,63 @@ async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCo
   }
 }
 
+async function sendSupportReplyEmail(targetEmail, userName, subject, replyText, status) {
+  const isResolved = status === "resolved";
+  const emailSubject = isResolved
+    ? `FinTrack Support: Issue Resolved - ${subject || "Inquiry"}`
+    : `FinTrack Support: Reply to your inquiry - ${subject || "Inquiry"}`;
+  const text = `Hello ${userName || "there"},\n\nThe FinTrack Support Team has responded to your inquiry "${subject || "Inquiry"}":\n\n${replyText}\n\nStatus: ${status.toUpperCase()}\n\nBest regards,\nFinTrack Support Team`;
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <div style="display: inline-block; background: ${isResolved ? "#ecfdf5" : "#eff6ff"}; padding: 12px; border-radius: 50%; margin-bottom: 12px;">
+          <span style="font-size: 28px;">${isResolved ? "✅" : "💬"}</span>
+        </div>
+        <h1 style="color: #0f172a; font-size: 20px; margin: 0 0 6px; font-weight: 700;">
+          ${isResolved ? "Your Issue Has Been Resolved" : "New Reply from FinTrack Support"}
+        </h1>
+        <p style="color: #64748b; font-size: 14px; margin: 0;">Inquiry: "${subject || "Inquiry"}"</p>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+        <p style="color: #64748b; font-size: 12px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin: 0 0 8px;">Support Team Response</p>
+        <p style="color: #1e293b; font-size: 15px; line-height: 1.6; margin: 0; white-space: pre-wrap;">${replyText}</p>
+      </div>
+
+      <div style="text-align: center; margin-bottom: 16px;">
+        <span style="display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 600; background: ${isResolved ? "#d1fae5" : "#e0e7ff"}; color: ${isResolved ? "#065f46" : "#3730a3"};">
+          Status: ${status.toUpperCase()}
+        </span>
+      </div>
+
+      <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 0;">
+        Thank you for using FinTrack. If you have further questions, you can reply directly in the app.
+      </p>
+    </div>
+  `;
+
+  // Try Resend primary first
+  const resendResult = await sendViaResend({ to: targetEmail, subject: emailSubject, html, text });
+  if (resendResult && resendResult.sent) return { sent: true, messageId: resendResult.messageId };
+
+  // Fallback to Nodemailer
+  if (mailTransporter) {
+    try {
+      const info = await mailTransporter.sendMail({
+        from: `"FinTrack Support" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+        to: targetEmail,
+        subject: emailSubject,
+        text,
+        html
+      });
+      return { sent: true, messageId: info.messageId };
+    } catch (e) {
+      console.warn("[Email Service] Failed to send support reply email:", e.message);
+    }
+  }
+  return { sent: false };
+}
+
 
 // ================= LIVE EMAIL VALIDATION & VERIFICATION =================
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -1263,6 +1320,12 @@ app.patch("/api/admin/contact/:id/status", auth, adminFullOnly, async (req, res)
       console.log(`[Notification] Created issue status notification for user ${targetUserId} (${normalized})`);
     }
 
+    if (normalized === "resolved" && msg.email) {
+      sendSupportReplyEmail(msg.email, msg.name, msg.subject, msg.adminReply || "Your inquiry has been investigated and marked as resolved by our team.", "resolved").catch(err => {
+        console.warn("[Email Service] Could not send resolution email:", err.message);
+      });
+    }
+
     res.json({ success: true, message: "Status updated successfully", data: msg });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -1321,6 +1384,13 @@ app.post("/api/admin/contact/:id/reply", auth, adminFullOnly, async (req, res) =
         deletedBy: []
       });
       console.log(`[Notification] Created issue reply notification for user ${targetUserId}`);
+    }
+
+    // Send direct email via Resend / Gmail
+    if (msg.email) {
+      sendSupportReplyEmail(msg.email, msg.name, msg.subject, reply.trim(), msg.status).catch(err => {
+        console.warn("[Email Service] Could not send reply email:", err.message);
+      });
     }
 
     res.json({ success: true, message: "Reply sent successfully", data: msg });
