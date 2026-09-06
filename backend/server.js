@@ -57,7 +57,41 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================= RESEND / NODEMAILER EMAIL DELIVERY =================
+// ================= POSTMARK / RESEND / NODEMAILER EMAIL PIPELINE =================
+async function sendViaPostmark({ to, subject, html, text }) {
+  const token = process.env.POSTMARK_SERVER_TOKEN;
+  if (!token) return null;
+  const from = process.env.POSTMARK_FROM || process.env.EMAIL_USER || "fintrack.com@gmail.com";
+  try {
+    const res = await fetch("https://api.postmarkapp.com/email", {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Postmark-Server-Token": token.trim()
+      },
+      body: JSON.stringify({
+        From: from,
+        To: Array.isArray(to) ? to.join(",") : to,
+        Subject: subject,
+        HtmlBody: html,
+        TextBody: text,
+        MessageStream: "outbound"
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.ErrorCode) {
+      console.warn("[Email Service Postmark] Notice from Postmark:", data.Message || JSON.stringify(data));
+      return null;
+    }
+    console.log(`[Email Service Postmark] Delivered successfully to ${to} via Postmark: ID=${data.MessageID}`);
+    return { sent: true, messageId: data.MessageID };
+  } catch (err) {
+    console.warn("[Email Service Postmark] Error attempting Postmark delivery:", err.message);
+    return null;
+  }
+}
+
 async function sendViaResend({ to, subject, html, text }) {
   if (!process.env.RESEND_API_KEY) return null;
   try {
@@ -120,6 +154,34 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   console.log("[Email Service] Fallback SMTP not configured.");
 }
 
+async function dispatchEmail({ to, subject, html, text }) {
+  // 1. Try Postmark first
+  const postmarkResult = await sendViaPostmark({ to, subject, html, text });
+  if (postmarkResult && postmarkResult.sent) return postmarkResult;
+
+  // 2. Try Resend second
+  const resendResult = await sendViaResend({ to, subject, html, text });
+  if (resendResult && resendResult.sent) return resendResult;
+
+  // 3. Fallback to Nodemailer
+  if (mailTransporter) {
+    try {
+      const info = await mailTransporter.sendMail({
+        from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+        to,
+        subject,
+        text,
+        html
+      });
+      return { sent: true, messageId: info.messageId };
+    } catch (e) {
+      console.warn("[Email Service] SMTP delivery failed:", e.message);
+    }
+  }
+
+  return { sent: false };
+}
+
 async function sendEmailCode(targetEmail, code) {
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 24px; background: #f8fafc; border-radius: 8px; max-width: 500px;">
@@ -133,31 +195,11 @@ async function sendEmailCode(targetEmail, code) {
   `;
   const text = `FinTrack Account Verification\n\nYour 6-digit verification code is: ${code}\nThis code is valid for 10 minutes.`;
 
-  // Try Resend primary first
-  const resendResult = await sendViaResend({ to: targetEmail, subject: "FinTrack - Email Verification Code", html, text });
-  if (resendResult && resendResult.sent) {
-    return { sent: true, messageId: resendResult.messageId };
-  }
-
-  // Fallback to Nodemailer
-  if (!mailTransporter) {
+  const result = await dispatchEmail({ to: targetEmail, subject: "FinTrack - Email Verification Code", html, text });
+  if (!result.sent) {
     console.log(`[Auth Verification Code for ${targetEmail}]: ${code}`);
-    return { sent: false };
   }
-  try {
-    await mailTransporter.sendMail({
-      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "FinTrack - Email Verification Code",
-      text,
-      html
-    });
-    console.log(`[Email Service] Verification email successfully sent to ${targetEmail}`);
-    return { sent: true };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send email to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 async function sendVerificationLinkEmail(targetEmail, targetName, verifyUrl) {
@@ -193,35 +235,15 @@ async function sendVerificationLinkEmail(targetEmail, targetName, verifyUrl) {
     </div>
   `;
 
-  // Try Resend primary first
-  const resendResult = await sendViaResend({ to: targetEmail, subject: "Confirm your FinTrack account", html, text });
-  if (resendResult && resendResult.sent) {
-    return { sent: true, messageId: resendResult.messageId };
-  }
-
-  // Fallback to Nodemailer
-  if (!mailTransporter) {
+  const result = await dispatchEmail({ to: targetEmail, subject: "Confirm your FinTrack account", html, text });
+  if (!result.sent) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Verification Link for ${targetEmail}]`);
     console.log(`Click this link to verify and create account:`);
     console.log(`${verifyUrl}`);
     console.log(`======================================================\n`);
-    return { sent: false };
   }
-  try {
-    const info = await mailTransporter.sendMail({
-      from: `"FinTrack" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "Confirm your FinTrack account",
-      text,
-      html
-    });
-    console.log(`[Email Service] Verification link email delivered to ${targetEmail}: ID=${info.messageId}, GoogleResponse=${info.response}`);
-    return { sent: true, messageId: info.messageId };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send verification link to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCode) {
@@ -268,35 +290,15 @@ async function sendPasswordResetEmail(targetEmail, targetName, resetUrl, resetCo
     </div>
   `;
 
-  // Try Resend primary first
-  const resendResult = await sendViaResend({ to: targetEmail, subject: "FinTrack - Password Reset Request", html, text });
-  if (resendResult && resendResult.sent) {
-    return { sent: true, messageId: resendResult.messageId };
-  }
-
-  // Fallback to Nodemailer
-  if (!mailTransporter) {
+  const result = await dispatchEmail({ to: targetEmail, subject: "FinTrack - Password Reset Request", html, text });
+  if (!result.sent) {
     console.log(`\n======================================================`);
     console.log(`[FinTrack Password Reset for ${targetEmail}]`);
     console.log(`Reset Code: ${resetCode}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log(`======================================================\n`);
-    return { sent: false };
   }
-  try {
-    const info = await mailTransporter.sendMail({
-      from: `"FinTrack Security" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: "FinTrack - Password Reset Request",
-      text,
-      html
-    });
-    console.log(`[Email Service] Password reset email delivered to ${targetEmail}: ID=${info.messageId}`);
-    return { sent: true, messageId: info.messageId };
-  } catch (err) {
-    console.error(`[Email Service] Failed to send password reset email to ${targetEmail}:`, err.message);
-    return { sent: false, error: err.message };
-  }
+  return result;
 }
 
 async function sendSupportReplyEmail(targetEmail, userName, subject, replyText, status) {
@@ -334,26 +336,7 @@ async function sendSupportReplyEmail(targetEmail, userName, subject, replyText, 
     </div>
   `;
 
-  // Try Resend primary first
-  const resendResult = await sendViaResend({ to: targetEmail, subject: emailSubject, html, text });
-  if (resendResult && resendResult.sent) return { sent: true, messageId: resendResult.messageId };
-
-  // Fallback to Nodemailer
-  if (mailTransporter) {
-    try {
-      const info = await mailTransporter.sendMail({
-        from: `"FinTrack Support" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
-        to: targetEmail,
-        subject: emailSubject,
-        text,
-        html
-      });
-      return { sent: true, messageId: info.messageId };
-    } catch (e) {
-      console.warn("[Email Service] Failed to send support reply email:", e.message);
-    }
-  }
-  return { sent: false };
+  return await dispatchEmail({ to: targetEmail, subject: emailSubject, html, text });
 }
 
 
